@@ -1,6 +1,8 @@
 import java.io.{BufferedWriter, File, FileWriter}
 
 import gks._
+import gks.{Group, G, Util}
+import gks.Group._
 import gks.Util._
 import Lab12._
 import scalax.collection.Graph
@@ -56,23 +58,48 @@ object Lab34 extends App {
       }
   }
 
-  def findByFeedbackRelation(graph: List[String], acc: Module): Module = {
+  def createGraph(group: Group): Set[G] = {
+    val nodes = group.operations.map(G(_))
+
+    def findEdgesForNode(node: G, acc: Set[String] = Set()): G = {
+      val all = group.details.map(OperationList(_))
+
+      def findInRow(row: List[String], acc: Set[String] = Set()): Set[String] =
+        row match {
+          case x :: Nil => acc
+          case x1 :: x2 :: rest =>
+            if (x1 == node.name) findInRow(x2 :: rest, acc + x2)
+            else findInRow(x2 :: rest, acc)
+        }
+
+      node ++ all.flatMap(findInRow(_, Set())).toSet
+    }
+
+    nodes.map(n => findEdgesForNode(n, Set())).toSet
+  }
+
+  val Graphs = OptimizedGroups.map(createGraph)
+
+  def findByFeedbackRelation(graph: List[G], acc: Module = Module.Empty): Module = {
+    graph match {
       case Nil =>
         acc
       case edge :: rest =>
-        acc
-
+        val result =
+          graph
+            .filter(e =>
+              edge.subnodes.contains(e.name))
+            .filter(_.subnodes.contains(edge.name))
+            .map(_.name)
+        if (result.isEmpty)
+          findByFeedbackRelation(rest, acc)
+        else
+          findByFeedbackRelation(rest, acc ++ Module(edge.name :: result))
+    }
   }
 
-  def getModules(group: Group, acc: Module = Module.Empty): Module = {
-    println(s"GRAPH  ${group.getGraph.edges.toList.mkString}")
-
-
-
-    acc
-  }
-
-  getModules(OptimizedGroups.head)
+  val res = findByFeedbackRelation(Graphs.head.toList)
+  println(res)
 
 
   Thread.sleep(10000000)

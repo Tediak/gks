@@ -29,7 +29,7 @@ case class Group(details: List[Int], operations: List[String]) {
                          gr: Graph[String, LDiEdge]): Graph[String, LDiEdge] =
       edgesList match {
         case y :: ys =>
-          initializeMatrix(ys, gr + (y._1 ~+> y._2) (""))
+          initializeMatrix(ys, gr + (y._1 ~+> y._2)(""))
         case Nil =>
           gr
       }
@@ -52,7 +52,6 @@ object Group {
     )
 
   def ofDetails(details: List[Int]) = Group(details)
-
 
   implicit class GroupCollectionExtender(groups: List[Group]) {
     def getDetails: List[Int] = groups.flatMap(_.details)
