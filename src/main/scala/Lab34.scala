@@ -1,10 +1,9 @@
 import java.io.{BufferedWriter, File, FileWriter}
 
-import gks._
-import gks.{Group, G, Util}
-import gks.Group._
-import gks.Util._
 import Lab12._
+import com.sun.org.apache.xerces.internal.impl.xs.models.XSAllCM
+import gks._
+import gks.Util._
 import scalax.collection.Graph
 import scalax.collection.edge.LDiEdge
 import scalax.collection.io.dot._
@@ -17,6 +16,8 @@ import scala.util.{Failure, Success}
 object Lab34 extends App {
 
   val ZippedGroups = OptimizedGroups.zipWithIndex.map { case (g, i) => (g, (i + 1).toString) }
+
+  //  OptimizedGroups.head.getGraph.edges.toOuter.map(_.to).foreach(println)
 
   val root = DotRootGraph(directed = true, id = None)
 
@@ -57,50 +58,134 @@ object Lab34 extends App {
         case Failure(_) => Unit
       }
   }
+  "graphs".task()
 
-  def createGraph(group: Group): Set[G] = {
-    val nodes = group.operations.map(G(_))
+  val AllGraphs = OptimizedGroups.map(_.getGraph)
 
-    def findEdgesForNode(node: G, acc: Set[String] = Set()): G = {
-      val all = group.details.map(OperationList(_))
 
-      def findInRow(row: List[String], acc: Set[String] = Set()): Set[String] =
-        row match {
-          case x :: Nil => acc
-          case x1 :: x2 :: rest =>
-            if (x1 == node.name) findInRow(x2 :: rest, acc + x2)
-            else findInRow(x2 :: rest, acc)
-        }
+  val findReverseModule = AllGraphs.map { graph =>
+    graph.edges.filter { edge =>
+      val reverseEdge = LDiEdge(edge._2, edge._1)("")
+      graph.edges.contains(reverseEdge)
+    }.toList.flatMap(edge => List(edge._1, edge._2))
+  }.map(r => Module(r.distinct.map(_.toString)))
 
-      node ++ all.flatMap(findInRow(_, Set())).toSet
-    }
-
-    nodes.map(n => findEdgesForNode(n, Set())).toSet
+  println("Reverse modules:")
+  findReverseModule.zipWithIndex foreach { p =>
+    println(s"#${p._2}: ${p._1}")
   }
 
-  val Graphs = OptimizedGroups.map(createGraph)
 
-  def findByFeedbackRelation(graph: List[G], acc: Module = Module.Empty): Module = {
-    graph match {
-      case Nil =>
-        acc
-      case edge :: rest =>
-        val result =
-          graph
-            .filter(e =>
-              edge.subnodes.contains(e.name))
-            .filter(_.subnodes.contains(edge.name))
-            .map(_.name)
-        if (result.isEmpty)
-          findByFeedbackRelation(rest, acc)
-        else
-          findByFeedbackRelation(rest, acc ++ Module(edge.name :: result))
-    }
+  val findAllCycles = AllGraphs.map { graph =>
+    graph.nodes.map { node =>
+      node.findCycle
+    }.filter(_.nonEmpty).flatten
   }
 
-  val res = findByFeedbackRelation(Graphs.head.toList)
-  println(res)
+  val findCycleModules = findAllCycles.map { set =>
+    val acc: Set[String] = Set()
+    set.foldLeft(acc) { (set, cycle) =>
+      set ++ cycle.nodes.map(_.value).toSet
+    }
+  }.map(set => Module(set.toList))
+
+  val filterCycleModules =
+    (findReverseModule zip findCycleModules).map {
+      case (rev, cycle) =>
+        Module(cycle.operations.filterNot(rev.operations.contains))
+    }
+
+  println("Cycle modules: ")
+  filterCycleModules.zipWithIndex foreach { p =>
+    println(s"#${p._2}: ${p._1}")
+  }
+
+  val findOnlyIn = AllGraphs.map { graph =>
+    val nodesIn = graph.edges.map(_._2.value).toList
+    val nodesOut = graph.edges.map(_._1.value).toList
+
+    Module(nodesIn.filterNot(nodesOut.contains).distinct)
+  }
 
 
-  Thread.sleep(10000000)
+  val findOnlyOut = AllGraphs.map { graph =>
+    val nodesIn = graph.edges.map(_._2.value).toList
+    val nodesOut = graph.edges.map(_._1.value).toList
+
+    Module(nodesOut.filterNot(nodesIn.contains).distinct)
+  }
+
+  val filterOnlyIn =
+    (findOnlyIn zip (filterCycleModules zip findReverseModule))
+      .map {
+        case (in, (cycle, reverse)) =>
+          Module(in.operations
+            .filter(op =>
+              !cycle.operations.contains(op) &&
+                !reverse.operations.contains(op)
+            )
+          )
+      }
+
+  val filterOnlyOut =
+    (findOnlyOut zip (filterCycleModules zip findReverseModule))
+      .map {
+        case (out, (cycle, reverse)) =>
+          Module(out.operations
+            .filter(op =>
+              !cycle.operations.contains(op) &&
+                !reverse.operations.contains(op)))
+      }
+
+
+  println("Only in: ")
+  filterOnlyIn.zipWithIndex foreach {
+    case (m, i) => println(s"#$i : $m")
+  }
+
+  println("Only out: ")
+  filterOnlyOut.zipWithIndex foreach {
+    case (m, i) => println(s"#$i : $m")
+  }
+
+  val findAllChains = AllGraphs.map { graph =>
+    Module(graph.nodes.map(_.value).toList)
+  }
+
+  val filterChains =
+    findAllChains
+      .zip(findReverseModule)
+      .zip(filterCycleModules)
+      .zip(filterOnlyIn)
+      .zip(filterOnlyOut)
+      .map {
+        case ((((chains, m2), m3), m4), m5) =>
+          val deprecatedOperations = (m2 ++ m3 ++ m4 ++ m5).operations
+
+          Module(chains.operations.filterNot(deprecatedOperations.contains))
+      }
+
+  filterChains.zipWithIndex foreach {
+    case (m, i) => println(s"#$i : $m")
+  }
+
+  "all modules".task()
+
+  val AllModules =
+    findReverseModule
+      .zip(filterCycleModules)
+      .zip(filterOnlyIn)
+      .zip(filterOnlyOut)
+      .zip(filterChains) map {
+      case ((((m1, m2), m3), m4), m5) =>
+        List(m1, m2, m3, m4, m5).filter(_.nonEmpty)
+    }
+
+  AllModules.zipWithIndex.foreach{
+    case (lst, i) =>
+      println(s"#$i")
+      lst.foreach(println)
+      println("--------------")
+  }
+  //  Thread.sleep(10000000)
 }

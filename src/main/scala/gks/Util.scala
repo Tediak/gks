@@ -23,7 +23,7 @@ object Util {
       )
 
   implicit class StringExtender(s: String) {
-    val task: () => Unit = () => println(s"\n***\n[${s.toUpperCase}]\n***\n")
+    val task: () => Unit = () => println(s"\n***\n[${s.toUpperCase}]\n")
 
     val graphDir = s"graph/lab3-graph${s}.dot"
   }
